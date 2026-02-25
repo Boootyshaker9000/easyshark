@@ -4,11 +4,42 @@ from scapy.all import srp, sniff, conf
 from scapy.layers.inet import IP
 from scapy.layers.inet6 import IPv6
 from scapy.layers.l2 import Ether, ARP
+import os
+import sys
+import subprocess
 
 conf.verb = 0
 
 dns_cache = {}
 known_arp_records = {}
+
+
+def check_npcap():
+    if os.name == 'nt':
+        path_to_dll = [
+            r"C:\Windows\System32\Npcap\wpcap.dll",
+            r"C:\Windows\System32\wpcap.dll"
+        ]
+
+        if not any(os.path.exists(path) for path in path_to_dll):
+            print("\n" + "!" * 60)
+            print("[!] CRITICAL ERROR: Driver for network card missing (Npcap)!")
+            print("[*] It must be installed in order to function properly.")
+            print("[*] During installation, be sure to check 'WinPcap API-compatible Mode'.")
+            print("!" * 60 + "\n")
+
+            installer = "npcap-installer.exe"
+            if os.path.exists(installer):
+                answer = input("Installer found. Do you want to run it? (y/n): ")
+                if answer.lower() == 'y':
+                    print("[*] Running installation...")
+
+                    subprocess.run(installer)
+                    print("[*] After completing the installation, restart the program.")
+            else:
+                print(f"[-] Please download it from the website or place '{installer}' in this folder.")
+
+            sys.exit(1)
 
 
 def get_network_ip():

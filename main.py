@@ -118,8 +118,8 @@ def packet_callback(packet):
 
     print(log_text, end="")
 
-    with open("log.txt", "a", encoding="utf-8") as soubor:
-        soubor.write(log_text)
+    with open("network_log.txt", "a", encoding="utf-8") as file:
+        file.write(log_text)
 
 
 def monitor_traffic():
@@ -136,7 +136,7 @@ def monitor_traffic():
     print(f"\n[*] Listening... (Filter: {user_filter if user_filter else 'All'} | Regime: {regime_text})")
 
     if count == 0:
-        print("[!] To shut down a return to the menu press Ctrl+C")
+        print("[!] To shut down and return to the menu press Ctrl+C")
 
     try:
         sniff(filter=user_filter, prn=packet_callback, count=count)
@@ -169,7 +169,7 @@ def check_arp_spoofing(packet):
 def run_arp_spoofing_check():
     print("\n--- Security check: ARP spoofing detection ---")
     print("[*] Listening and learning current network status...")
-    print("[!] To shut down a return to the menu press Ctrl+C")
+    print("[!] To shut down and return to the menu press Ctrl+C")
 
     known_arp_records.clear()
 

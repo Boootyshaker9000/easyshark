@@ -8,7 +8,7 @@ from scapy.layers.l2 import Ether, ARP
 conf.verb = 0
 
 dns_cache = {}
-zname_arp_zaznamy = {}
+known_arp_records = {}
 
 
 def get_network_ip():
@@ -30,13 +30,13 @@ def translate_ip_to_domain(ip_address):
 
 def scan_network():
     target_ip = get_network_ip()
-    print(f"\n[*] Skenuji síť: {target_ip} ... čekejte prosím.")
+    print(f"\n[*] Scanning network: {target_ip} ... please wait.")
 
     packet = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=target_ip)
     result = srp(packet, timeout=3, verbose=0)[0]
 
-    print("\nNalezená zařízení:")
-    print("IP Adresa\t\tMAC Adresa")
+    print("\nFound devices:")
+    print("IP Address\t\tMAC Address")
     print("-" * 40)
 
     clients = []
@@ -45,46 +45,45 @@ def scan_network():
         print(f"{received.psrc}\t\t{received.hwsrc}")
 
     if not clients:
-        print("Žádná zařízení nebyla nalezena.")
+        print("No device found.")
 
 
 def packet_callback(packet):
-    """Funkce pro detailní výpis paketů a logování do souboru."""
     log_text = "\n" + "=" * 70 + "\n"
-    citelny_cas = datetime.fromtimestamp(float(packet.time)).strftime('%H:%M:%S')
+    readable_time = datetime.fromtimestamp(float(packet.time)).strftime('%H:%M:%S')
 
-    zdroj = "Neznámý"
-    cil = "Neznámý"
-    typ_komunikace = "Neznámý typ"
+    source = "Unknown"
+    destination = "Unknown"
+    communication_type = "Unknown"
 
     if packet.haslayer(IP):
-        zdroj = translate_ip_to_domain(packet[IP].src)
-        cil = translate_ip_to_domain(packet[IP].dst)
-        typ_komunikace = "IPv4"
+        source = translate_ip_to_domain(packet[IP].src)
+        destination = translate_ip_to_domain(packet[IP].dst)
+        communication_type = "IPv4"
     elif packet.haslayer(IPv6):
-        zdroj = translate_ip_to_domain(packet[IPv6].src)
-        cil = translate_ip_to_domain(packet[IPv6].dst)
-        typ_komunikace = "IPv6"
+        source = translate_ip_to_domain(packet[IPv6].src)
+        destination = translate_ip_to_domain(packet[IPv6].dst)
+        communication_type = "IPv6"
     elif packet.haslayer(ARP):
-        zdroj = f"{packet[ARP].hwsrc} (IP: {packet[ARP].psrc})"
-        cil = f"{packet[ARP].hwdst} (IP: {packet[ARP].pdst})"
-        typ_komunikace = "ARP"
+        source = f"{packet[ARP].hwsrc} (IP: {packet[ARP].psrc})"
+        destination = f"{packet[ARP].hwdst} (IP: {packet[ARP].pdst})"
+        communication_type = "ARP"
     elif packet.haslayer(Ether):
-        zdroj = f"MAC: {packet[Ether].src}"
-        cil = f"MAC: {packet[Ether].dst}"
-        typ_komunikace = "L2/MAC"
+        source = f"MAC: {packet[Ether].src}"
+        destination = f"MAC: {packet[Ether].dst}"
+        communication_type = "L2/MAC"
 
-    log_text += f"Čas: {citelny_cas} | Protokol: {typ_komunikace}\n"
-    log_text += f"Z: {zdroj}  --->  Do: {cil}\n"
+    log_text += f"Time: {readable_time} | Protocol: {communication_type}\n"
+    log_text += f"From: {source}  --->  To: {destination}\n"
     log_text += f"Info: {packet.summary()}\n"
 
     if packet.haslayer('Raw'):
-        surova_data = packet['Raw'].load
+        raw_data = packet['Raw'].load
         try:
-            textova_data = surova_data.decode('utf-8')
-            log_text += f"Textová data: {textova_data.strip()}...\n"
+            text_data = raw_data.decode('utf-8')
+            log_text += f"Text data: {text_data.strip()}...\n"
         except UnicodeDecodeError:
-            log_text += f"Data: [Šifrovaný/binární obsah, velikost: {len(surova_data)} bytů]\n"
+            log_text += f"Data: [Cyphered/binary content, size: {len(raw_data)} bytes]\n"
 
     print(log_text, end="")
 
@@ -92,99 +91,88 @@ def packet_callback(packet):
         soubor.write(log_text)
 
 
-def sledovani_dopravy():
-    """Požadavek: Sledování dopravy a filtrování podle uživatelského vstupu."""
-    print("\n--- Sledování sítě (Sniffer) ---")
-    user_filter = input("Zadejte filtr (např. 'tcp', 'udp', 'icmp' - nechte prázdné pro vše): ")
-    packet_count = input("Kolik packetů zachytit? (Nechte prázdné nebo '0' pro NEKONEČNÉ sledování): ")
+def monitor_traffic():
+    print("\n--- Network monitoring (Sniffer) ---")
+    user_filter = input("Enter a filter ('tcp', 'udp', 'icmp', etc. - leave empty for all): ")
+    packet_count = input("How many packets? (Leave empty or '0' for infinite scanning): ")
 
     try:
         count = int(packet_count)
     except ValueError:
         count = 0
 
-    režim_text = "Nekonečné sledování" if count == 0 else f"{count} packetů"
-    print(f"\n[*] Spouštím odposlech... (Filtr: {user_filter if user_filter else 'Vše'} | Režim: {režim_text})")
+    regime_text = "Infinite scanning" if count == 0 else f"{count} packets"
+    print(f"\n[*] Listening... (Filter: {user_filter if user_filter else 'All'} | Regime: {regime_text})")
 
     if count == 0:
-        print("[!] Pro UKONČENÍ a návrat do menu stiskněte Ctrl+C")
+        print("[!] To shut down a return to the menu press Ctrl+C")
 
     try:
         sniff(filter=user_filter, prn=packet_callback, count=count)
     except KeyboardInterrupt:
-        print("\n\n[*] Sledování bylo ručně ukončeno. Vracím se do hlavního menu...")
-    except Exception as e:
-        print(f"\n[!] Chyba při odposlechu: {e}")
+        print("\n\n[*] Monitoring was ended. Returning to main menu...")
+    except Exception as exception:
+        print(f"\n[!] Error while listening: {exception}")
 
 
-# ==========================================
-# 3. BEZPEČNOSTNÍ MONITOR (IDS)
-# ==========================================
-
-def bezpecnostni_kontrola_arp(packet):
-    """Hledá anomálie (změnu MAC adresy za běhu - ARP Spoofing)."""
+def check_arp_spoofing(packet):
     if packet.haslayer(ARP) and packet[ARP].op == 2:
-        ip_adresa = packet[ARP].psrc
-        mac_adresa = packet[ARP].hwsrc
+        ip_address = packet[ARP].psrc
+        new_mac = packet[ARP].hwsrc
 
-        if ip_adresa in zname_arp_zaznamy:
-            stara_mac = zname_arp_zaznamy[ip_adresa]
-            if stara_mac != mac_adresa:
-                varovani = (f"\n{'!' * 60}\n"
-                            f"[!!!] BEZPEČNOSTNÍ VAROVÁNÍ: Detekován možný ARP Spoofing! [!!!]\n"
-                            f"[*] IP {ip_adresa} změnila MAC adresu!\n"
-                            f"[*] Původní MAC: {stara_mac} | Nová MAC: {mac_adresa}\n"
+        if ip_address in known_arp_records:
+            old_mac = known_arp_records[ip_address]
+            if old_mac != new_mac:
+                warning = (f"\n{'!' * 60}\n"
+                            f"[!!!] SECURITY WARNING: Possible ARP spoofing detected! [!!!]\n"
+                            f"[*] IP {ip_address} changed it's MAC address!\n"
+                            f"[*] Previous MAC: {old_mac} | New MAC: {new_mac}\n"
                             f"{'!' * 60}\n")
-                print(varovani)
-                with open("sitovy_log.txt", "a", encoding="utf-8") as soubor:
-                    soubor.write(varovani)
+                print(warning)
+                with open("network_log.txt", "a", encoding="utf-8") as file:
+                    file.write(warning)
         else:
-            zname_arp_zaznamy[ip_adresa] = mac_adresa
+            known_arp_records[ip_address] = new_mac
 
 
-def spustit_bezpecnostni_monitor():
-    """Spustí monitorování útoků v lokální síti."""
-    print("\n--- Bezpečnostní monitor: Detekce ARP Spoofingu ---")
-    print("[*] Naslouchám a učím se aktuální stav sítě...")
-    print("[!] Pro UKONČENÍ a návrat do menu stiskněte Ctrl+C")
+def run_arp_spoofing_check():
+    print("\n--- Security check: ARP spoofing detection ---")
+    print("[*] Listening and learning current network status...")
+    print("[!] To shut down a return to the menu press Ctrl+C")
 
-    zname_arp_zaznamy.clear()
+    known_arp_records.clear()
 
     try:
-        sniff(filter="arp", prn=bezpecnostni_kontrola_arp, store=0)
+        sniff(filter="arp", prn=check_arp_spoofing, store=0)
     except KeyboardInterrupt:
-        print("\n\n[*] Bezpečnostní monitor byl ukončen.")
-    except Exception as e:
-        print(f"\n[!] Chyba při spuštění monitoru: {e}")
+        print("\n\n[*] Security check was ended.")
+    except Exception as exception:
+        print(f"\n[!] Error while checking: {exception}")
 
-
-# ==========================================
-# 4. HLAVNÍ MENU
-# ==========================================
 
 def main():
     while True:
         print("\n" + "#" * 45)
-        print(" JEDNODUCHÝ SÍŤOVÝ ANALYZÁTOR & IDS (Scapy)")
+        print(" Easyshark network analyzer & IDS (Scapy)")
         print("#" * 45)
-        print("1. Skenovat síť (Najít zařízení)")
-        print("2. Sledovat provoz (Sniffer & Filtrování)")
-        print("3. Bezpečnostní monitor (Detekce útoků)")
-        print("4. Konec")
+        print("1. Scan network (Find devices)")
+        print("2. Listen to traffic (Sniffer & Filtering)")
+        print("3. Security check (intrusion detection)")
+        print("4. Shut down")
 
-        volba = input("\nVyberte možnost (1-4): ")
+        choice = input("\nSelect an option (1-4): ")
 
-        if volba == '1':
-            skenovani_site()
-        elif volba == '2':
-            sledovani_dopravy()
-        elif volba == '3':
-            spustit_bezpecnostni_monitor()
-        elif volba == '4':
-            print("Ukončuji program. Záznamy najdete v 'sitovy_log.txt'.")
+        if choice == '1':
+            scan_network()
+        elif choice == '2':
+            monitor_traffic()
+        elif choice == '3':
+            run_arp_spoofing_check()
+        elif choice == '4':
+            print("Shutting down application. You will find records in 'network_log.txt'.")
             break
         else:
-            print("Neplatná volba, zkuste to znovu.")
+            print("Invalid choice, try again.")
 
 
 if __name__ == "__main__":

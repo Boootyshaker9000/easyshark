@@ -191,7 +191,10 @@ def main():
         print("3. Security check (intrusion detection)")
         print("4. Shut down")
 
-        choice = input("\nSelect an option (1-4): ")
+        try:
+            choice = input("\nSelect an option (1-4): ")
+        except KeyboardInterrupt:
+            break
 
         if choice == '1':
             scan_network()

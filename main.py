@@ -84,7 +84,6 @@ def scan_network(target_ip=None):
     print(f"\n[*] Scanning network: {target_ip} ... please wait.")
 
     try:
-        # Detect if it's IPv4 or IPv6
         network = ipaddress.ip_network(target_ip, strict=False)
 
         if network.version == 4:
@@ -105,7 +104,6 @@ def scan_network(target_ip=None):
 
         elif network.version == 6:
             print("[*] IPv6 network detected. Using ICMPv6 Multicast (All-Nodes) discovery.")
-            # Multicast MAC address for IPv6 all-nodes (ff02::1) is 33:33:00:00:00:01
             packet = Ether(dst="33:33:00:00:00:01") / IPv6(dst="ff02::1") / ICMPv6EchoRequest()
             result = srp(packet, timeout=3, verbose=0)[0]
 
@@ -115,7 +113,6 @@ def scan_network(target_ip=None):
 
             clients = []
             for sent, received in result:
-                # Prevent duplicate responses from the same device
                 ip_src = received[IPv6].src
                 if ip_src not in clients:
                     clients.append(ip_src)

@@ -3,11 +3,12 @@
 EasyShark is a lightweight, Python-based network analysis and Intrusion Detection System (IDS) tool. It is designed to be user-friendly for beginners in IT while offering powerful background-service capabilities for advanced users. It utilizes the `scapy` library for low-level packet manipulation.
 
 ## Features
-* **Network Scanning:** ARP scanning to discover active devices and their MAC addresses on the local network.
+* **Dual-Stack Network Scanning:** * Identifies IPv4 devices using classic ARP scanning.
+  * Identifies IPv6 devices on the local link using ICMPv6 All-Nodes Multicast discovery.
 * **Traffic Sniffing:** Monitor network traffic in real-time with automatic DNS resolution (IP to Domain) and smart payload decoding.
 * **Traffic Filtering:** Filter captured packets by specific IPv4/IPv6 addresses, ports, or protocol types using BPF syntax.
 * **Security Monitor (IDS):** Detects ARP Spoofing (Man-in-the-Middle) attacks by monitoring unexpected MAC address changes.
-* **Log Rotation:** Automatically logs captured data to `log.txt` and rotates the file when it reaches 5 MB.
+* **Log Rotation:** Automatically logs captured data to `network_log.txt` and rotates the file when it reaches 5 MB.
 
 ---
 
@@ -41,7 +42,7 @@ You can bypass the menu and run specific features directly (useful for running t
 
 **Arguments:**
 * `--mode`: Choose the mode (`scan`, `sniff`, `ids`).
-* `--target`: Specify the IP/CIDR range for the scanner (e.g., `192.168.1.0/24`).
+* `--target`: Specify the IP/CIDR range for the scanner (e.g., `192.168.1.0/24` for IPv4, or `fe80::/64` for IPv6).
 * `--ip`: Filter traffic by a specific IP address (IPv4 or IPv6).
 * `--port`: Filter traffic by a specific port (e.g., `80`, `443`, `53`).
 * `--count`: Number of packets to capture (default is `0`, which means infinite capturing).
@@ -50,17 +51,17 @@ You can bypass the menu and run specific features directly (useful for running t
 
 ## Usage Examples
 
-**Scan a specific local network:**
+**Scan a specific IPv4 network using ARP:**
 ```bash
 python main.py --mode scan --target 192.168.1.0/24
 ```
 
-**Sniff all traffic infinitely:**
+**Discover local IPv6 devices using Multicast:**
 ```bash
-python main.py --mode sniff
+python main.py --mode scan --target fe80::/64
 ```
 
-**Sniff only DNS traffic (Port 53) to a specific server (e.g., Google DNS) and stop after 20 packets:**
+**Sniff only DNS traffic (Port 53) to a specific server and stop after 20 packets:**
 ```bash
 python main.py --mode sniff --ip 8.8.8.8 --port 53 --count 20
 ```

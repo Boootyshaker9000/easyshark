@@ -1,17 +1,9 @@
-import socket
-from datetime import datetime
-from scapy.all import srp, sniff, conf
-from scapy.layers.inet import IP
-from scapy.layers.inet6 import IPv6
-from scapy.layers.l2 import Ether, ARP
 import os
 import sys
 import subprocess
-
-conf.verb = 0
-
-dns_cache = {}
-known_arp_records = {}
+import socket
+import argparse
+from datetime import datetime
 
 
 def check_npcap():
@@ -33,13 +25,38 @@ def check_npcap():
                 answer = input("Installer found. Do you want to run it? (y/n): ")
                 if answer.lower() == 'y':
                     print("[*] Running installation...")
-
                     subprocess.run(installer)
                     print("[*] After completing the installation, restart the program.")
             else:
                 print(f"[-] Please download it from the website or place '{installer}' in this folder.")
 
             sys.exit(1)
+
+
+check_npcap()
+
+
+from scapy.all import srp, sniff, conf
+from scapy.layers.inet import IP
+from scapy.layers.inet6 import IPv6
+from scapy.layers.l2 import Ether, ARP
+
+conf.verb = 0
+dns_cache = {}
+known_arp_records = {}
+
+def write_to_log(text, filename="log.txt", max_mb=5):
+    max_bytes = max_mb * 1024 * 1024
+
+    if os.path.exists(filename):
+        if os.path.getsize(filename) >= max_bytes:
+            backup_name = filename + ".bak"
+            if os.path.exists(backup_name):
+                os.remove(backup_name)
+            os.rename(filename, backup_name)
+
+    with open(filename, "a", encoding="utf-8") as file:
+        file.write(text)
 
 
 def get_network_ip():
@@ -59,8 +76,11 @@ def translate_ip_to_domain(ip_address):
     dns_cache[ip_address] = result
     return result
 
-def scan_network():
-    target_ip = get_network_ip()
+
+def scan_network(target_ip=None):
+    if not target_ip:
+        target_ip = get_network_ip()
+
     print(f"\n[*] Scanning network: {target_ip} ... please wait.")
 
     packet = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=target_ip)
@@ -117,31 +137,39 @@ def packet_callback(packet):
             log_text += f"Data: [Cyphered/binary content, size: {len(raw_data)} bytes]\n"
 
     print(log_text, end="")
-
-    with open("network_log.txt", "a", encoding="utf-8") as file:
-        file.write(log_text)
+    write_to_log(log_text)
 
 
-def monitor_traffic():
+def monitor_traffic(ip_filter=None, port_filter=None, count=0):
     print("\n--- Network monitoring (Sniffer) ---")
-    user_filter = input("Enter a filter ('tcp', 'udp', 'icmp', etc. - leave empty for all): ")
-    packet_count = input("How many packets? (Leave empty or '0' for infinite scanning): ")
 
-    try:
-        count = int(packet_count)
-    except ValueError:
-        count = 0
+    if ip_filter is None and port_filter is None and count == 0:
+        ip_filter = input("Enter IP address to filter (leave empty for all): ").strip()
+        port_filter = input("Enter port number to filter (leave empty for all): ").strip()
+        packet_count = input("How many packets? (Leave empty or '0' for infinite scanning): ").strip()
+        try:
+            count = int(packet_count) if packet_count else 0
+        except ValueError:
+            count = 0
+
+    bpf_parts = []
+    if ip_filter:
+        bpf_parts.append(f"host {ip_filter}")
+    if port_filter:
+        bpf_parts.append(f"port {port_filter}")
+
+    bpf_filter = " and ".join(bpf_parts)
 
     regime_text = "Infinite scanning" if count == 0 else f"{count} packets"
-    print(f"\n[*] Listening... (Filter: {user_filter if user_filter else 'All'} | Regime: {regime_text})")
+    print(f"\n[*] Listening... (Filter: {bpf_filter if bpf_filter else 'All'} | Regime: {regime_text})")
 
     if count == 0:
         print("[!] To shut down and return to the menu press Ctrl+C")
 
     try:
-        sniff(filter=user_filter, prn=packet_callback, count=count)
+        sniff(filter=bpf_filter, prn=packet_callback, count=count)
     except KeyboardInterrupt:
-        print("\n\n[*] Monitoring was ended. Returning to main menu...")
+        print("\n\n[*] Monitoring was ended. Returning...")
     except Exception as exception:
         print(f"\n[!] Error while listening: {exception}")
 
@@ -155,13 +183,12 @@ def check_arp_spoofing(packet):
             old_mac = known_arp_records[ip_address]
             if old_mac != new_mac:
                 warning = (f"\n{'!' * 60}\n"
-                            f"[!!!] SECURITY WARNING: Possible ARP spoofing detected! [!!!]\n"
-                            f"[*] IP {ip_address} changed it's MAC address!\n"
-                            f"[*] Previous MAC: {old_mac} | New MAC: {new_mac}\n"
-                            f"{'!' * 60}\n")
+                           f"[!!!] SECURITY WARNING: Possible ARP spoofing detected! [!!!]\n"
+                           f"[*] IP {ip_address} changed it's MAC address!\n"
+                           f"[*] Previous MAC: {old_mac} | New MAC: {new_mac}\n"
+                           f"{'!' * 60}\n")
                 print(warning)
-                with open("network_log.txt", "a", encoding="utf-8") as file:
-                    file.write(warning)
+                write_to_log(warning)
         else:
             known_arp_records[ip_address] = new_mac
 
@@ -180,11 +207,22 @@ def run_arp_spoofing_check():
     except Exception as exception:
         print(f"\n[!] Error while checking: {exception}")
 
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Easyshark Network Analyzer & IDS")
+    parser.add_argument("--mode", choices=['menu', 'scan', 'sniff', 'ids'], default='menu',
+                        help="Run mode (default: menu). Use this to run as a background service.")
+    parser.add_argument("--target", help="Target IP/CIDR for scanning (e.g., 192.168.1.0/24)")
+    parser.add_argument("--ip", help="Filter traffic by specific IP address (IPv4 or IPv6)")
+    parser.add_argument("--port", help="Filter traffic by specific port number")
+    parser.add_argument("--count", type=int, default=0, help="Number of packets to capture (0 = infinite)")
 
-def main():
+    return parser.parse_args()
+
+
+def interactive_menu():
     while True:
         print("\n" + "#" * 45)
-        print(" Easyshark network analyzer & IDS (Scapy)")
+        print(" Easyshark network analyzer & IDS")
         print("#" * 45)
         print("1. Scan network (Find devices)")
         print("2. Listen to traffic (Sniffer & Filtering)")
@@ -203,10 +241,29 @@ def main():
         elif choice == '3':
             run_arp_spoofing_check()
         elif choice == '4':
-            print("Shutting down application. You will find records in 'network_log.txt'.")
+            print("Shutting down application. You will find records in 'log.txt'.")
             break
         else:
             print("Invalid choice, try again.")
+
+
+def main():
+    args = parse_arguments()
+
+    if args.mode == 'scan':
+        if not args.target:
+            print("[!] Please specify --target for scanning mode.")
+            sys.exit(1)
+        scan_network(target_ip=args.target)
+
+    elif args.mode == 'sniff':
+        monitor_traffic(ip_filter=args.ip, port_filter=args.port, count=args.count)
+
+    elif args.mode == 'ids':
+        run_arp_spoofing_check()
+
+    else:
+        interactive_menu()
 
 
 if __name__ == "__main__":

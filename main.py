@@ -35,10 +35,10 @@ def check_npcap():
 
 check_npcap()
 
-
+import ipaddress
 from scapy.all import srp, sniff, conf
 from scapy.layers.inet import IP
-from scapy.layers.inet6 import IPv6
+from scapy.layers.inet6 import IPv6, ICMPv6EchoRequest
 from scapy.layers.l2 import Ether, ARP
 
 conf.verb = 0
@@ -83,20 +83,51 @@ def scan_network(target_ip=None):
 
     print(f"\n[*] Scanning network: {target_ip} ... please wait.")
 
-    packet = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=target_ip)
-    result = srp(packet, timeout=3, verbose=0)[0]
+    try:
+        # Detect if it's IPv4 or IPv6
+        network = ipaddress.ip_network(target_ip, strict=False)
 
-    print("\nFound devices:")
-    print("IP Address\t\tMAC Address")
-    print("-" * 40)
+        if network.version == 4:
+            packet = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=str(network))
+            result = srp(packet, timeout=3, verbose=0)[0]
 
-    clients = []
-    for sent, received in result:
-        clients.append(received.psrc)
-        print(f"{received.psrc}\t\t{received.hwsrc}")
+            print("\nFound devices (IPv4):")
+            print("IP Address\t\tMAC Address")
+            print("-" * 40)
 
-    if not clients:
-        print("No device found.")
+            clients = []
+            for sent, received in result:
+                clients.append(received.psrc)
+                print(f"{received.psrc}\t\t{received.hwsrc}")
+
+            if not clients:
+                print("No device found.")
+
+        elif network.version == 6:
+            print("[*] IPv6 network detected. Using ICMPv6 Multicast (All-Nodes) discovery.")
+            # Multicast MAC address for IPv6 all-nodes (ff02::1) is 33:33:00:00:00:01
+            packet = Ether(dst="33:33:00:00:00:01") / IPv6(dst="ff02::1") / ICMPv6EchoRequest()
+            result = srp(packet, timeout=3, verbose=0)[0]
+
+            print("\nFound devices (IPv6):")
+            print("IP Address\t\t\t\tMAC Address")
+            print("-" * 65)
+
+            clients = []
+            for sent, received in result:
+                # Prevent duplicate responses from the same device
+                ip_src = received[IPv6].src
+                if ip_src not in clients:
+                    clients.append(ip_src)
+                    print(f"{ip_src}\t\t{received[Ether].src}")
+
+            if not clients:
+                print("No device found.")
+
+    except ValueError:
+        print(f"[!] Invalid IP address or network format: {target_ip}")
+    except Exception as exception:
+        print(f"[!] Error while scanning: {exception}")
 
 
 def packet_callback(packet):
